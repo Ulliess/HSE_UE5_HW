@@ -1,0 +1,15 @@
+Binaries/
+Intermediate/
+Saved/
+DerivedDataCache/
+.vs/
+.idea/
+*.xcworkspace
+*.xcodeproj
+.DS_Store
+
+Content/*
+!Content/Variant_Combat/
+!Content/ThirdPerson/
+Content/ThirdPerson/*
+!Content/ThirdPerson/Blueprints/
