@@ -19,7 +19,11 @@ public:
 
 	UFUNCTION()
 	void StartOverlap(AActor* OverlappedActor, AActor* OtherActor);
+	UFUNCTION()
+	void EndOverlap(AActor* OverlappedActor, AActor* OtherActor);
 
 	UPROPERTY(EditAnywhere)
 	FName OtherTag;
+	UPROPERTY(EditAnywhere)
+	bool bCompleteOnExit = false;
 };
