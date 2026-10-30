@@ -1,7 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
-
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "Quest.generated.h"
@@ -9,41 +6,39 @@
 class UQuestSettings;
 class UQuestCondition;
 
-UENUM()
+UENUM(BlueprintType)
 enum class EQuestStatus : uint8
 {
-	WaitingForStart,
-	Started,
-	Completed
+    WaitingForStart,
+    Started,
+    Completed
 };
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnQuestStatusChanged, EQuestStatus, OldStatus, EQuestStatus, NewStatus);
 
 UCLASS()
 class PRACTICE_API AQuest : public AActor
 {
-	GENERATED_BODY()
-	
-public:	
-	// Sets default values for this actor's properties
-	AQuest();
-
+    GENERATED_BODY()
+public:
+    AQuest();
+    void UpdateStartStatus();
+    void UpdateEndStatus();
+    UFUNCTION(BlueprintPure, Category="Quest")
+    EQuestStatus GetQuestStatus() const { return QuestStatus; }
+    UPROPERTY(BlueprintAssignable, Category="Quest")
+    FOnQuestStatusChanged OnQuestStatusChanged;
 protected:
-	// Called when the game starts or when spawned
-	virtual void BeginPlay() override;
-
-public:	
-	// Called every frame
-	virtual void Tick(float DeltaTime) override;
-	void UpdateStartStatus();
-	void UpdateEndStatus();
-	EQuestStatus GetQuestStatus() const {return QuestStatus;}
-protected:
-	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	TObjectPtr<UQuestSettings> QuestSettings;
-
-	UPROPERTY()
-	TArray<UQuestCondition*> StartConditions;
-	UPROPERTY()
-	TArray<TObjectPtr<UQuestCondition>> EndConditions;
-	UPROPERTY(BlueprintReadOnly)
-	EQuestStatus QuestStatus = EQuestStatus::WaitingForStart;
+    virtual void BeginPlay() override;
+    void SetQuestStatus(EQuestStatus NewStatus);
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    TObjectPtr<UQuestSettings> QuestSettings;
+    UPROPERTY()
+    TArray<UQuestCondition*> StartConditions;
+    UPROPERTY()
+    TArray<TObjectPtr<UQuestCondition>> EndConditions;
+    UPROPERTY(BlueprintReadOnly)
+    EQuestStatus QuestStatus = EQuestStatus::WaitingForStart;
+private:
+    bool bInitializingConditions = false;
 };

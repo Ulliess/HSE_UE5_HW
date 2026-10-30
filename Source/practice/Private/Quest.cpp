@@ -1,104 +1,97 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
-
 #include "Quest.h"
-
 #include "QuestSettings.h"
 #include "QuestCondition.h"
 #include "QuestSystemComponent.h"
 #include "GameFramework/GameModeBase.h"
+#include "HAL/IConsoleManager.h"
 
 int32 bDebugInstantFinish = 0;
-FAutoConsoleVariableRef CVarDebugInstantFinish(TEXT("quest.InstantFinish"),
-	bDebugInstantFinish, TEXT("Debug Instantly Finish Quests"),
-	ECVF_Cheat);
+FAutoConsoleVariableRef CVarDebugInstantFinish(TEXT("quest.InstantFinish"), bDebugInstantFinish, TEXT("Debug Instantly Finish Quests"), ECVF_Cheat);
 
-// Sets default values
 AQuest::AQuest()
 {
- 	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
-	PrimaryActorTick.bCanEverTick = true;
-
+    PrimaryActorTick.bCanEverTick = false;
 }
 
-// Called when the game starts or when spawned
+void AQuest::SetQuestStatus(EQuestStatus NewStatus)
+{
+    if (QuestStatus == NewStatus) return;
+    const EQuestStatus OldStatus = QuestStatus;
+    QuestStatus = NewStatus;
+    OnQuestStatusChanged.Broadcast(OldStatus, NewStatus);
+}
+
 void AQuest::BeginPlay()
 {
-	Super::BeginPlay();
-	if(UQuestSystemComponent* QuestComponent = GetWorld()->GetAuthGameMode()->GetComponentByClass<UQuestSystemComponent>())
-	{
-		QuestComponent->RegisterQuest(this);
-	}
-	for(const UQuestCondition* ConditionTemplate: QuestSettings->StartConditionsInst)
-	{
-		if (!ensureMsgf(ConditionTemplate, TEXT("Bad setup for quest %s"), *GetNameSafe(this)))
-		{
-			return;
-		}
-		UQuestCondition* QuestCondition = DuplicateObject<UQuestCondition>(ConditionTemplate, this);
-		QuestCondition->StartCondition();
-		QuestCondition->OnQuestConditionCompleted.AddUObject(this, &AQuest::UpdateStartStatus);
-		StartConditions.Add(QuestCondition);
-	
-	}
-	
-}
-
-// Called every frame
-void AQuest::Tick(float DeltaTime)
-{
-	Super::Tick(DeltaTime);
-
+    Super::BeginPlay();
+    if (AGameModeBase* GameMode = GetWorld()->GetAuthGameMode())
+    {
+        if (UQuestSystemComponent* Component = GameMode->GetComponentByClass<UQuestSystemComponent>())
+            Component->RegisterQuest(this);
+    }
+    if (!ensureMsgf(QuestSettings, TEXT("Missing quest settings: %s"), *GetName())) return;
+    for (const UQuestCondition* Template : QuestSettings->StartConditionsInst)
+    {
+        if (!ensureMsgf(Template, TEXT("Invalid start condition: %s"), *GetName())) return;
+    }
+    bInitializingConditions = true;
+    for (const UQuestCondition* Template : QuestSettings->StartConditionsInst)
+    {
+        UQuestCondition* Condition = DuplicateObject<UQuestCondition>(Template, this);
+        StartConditions.Add(Condition);
+        Condition->OnQuestConditionCompleted.AddUObject(this, &AQuest::UpdateStartStatus);
+    }
+    for (UQuestCondition* Condition : StartConditions) Condition->StartCondition();
+    bInitializingConditions = false;
+    UpdateStartStatus();
 }
 
 void AQuest::UpdateStartStatus()
 {
-	for(UQuestCondition* Condition : StartConditions)
-	{
-		if (!ensure(Condition))
-		{
-			return;
-		}
-		if (!Condition->IsCompleted())
-		{
-			return;
-		}
-	}
-
-	QuestStatus = EQuestStatus::Started;
-	
-	if(bDebugInstantFinish)
-	{
-		QuestStatus = EQuestStatus::Completed;
-		return;
-	}
-
-	for(const UQuestCondition* ConditionTemplate: QuestSettings->EndConditionsInst)
-	{
-		if (!ensureMsgf(ConditionTemplate, TEXT("Bad setup for quest %s"), *GetNameSafe(this)))
-		{
-			return;
-		}
-		UQuestCondition* QuestCondition  = DuplicateObject<UQuestCondition>(ConditionTemplate, this);
-		QuestCondition->StartCondition();
-		QuestCondition->OnQuestConditionCompleted.AddUObject(this, &AQuest::UpdateEndStatus);
-		EndConditions.Add(QuestCondition);		
-	}
+    if (bInitializingConditions || QuestStatus != EQuestStatus::WaitingForStart || !QuestSettings) return;
+    for (UQuestCondition* Condition : StartConditions)
+    {
+        if (!IsValid(Condition) || !Condition->IsCompleted()) return;
+    }
+    for (const UQuestCondition* Template : QuestSettings->EndConditionsInst)
+    {
+        if (!ensureMsgf(Template, TEXT("Invalid end condition: %s"), *GetName())) return;
+    }
+    for (UQuestCondition* Condition : StartConditions)
+    {
+        Condition->OnQuestConditionCompleted.RemoveAll(this);
+        Condition->StopCondition();
+    }
+    bInitializingConditions = true;
+    SetQuestStatus(EQuestStatus::Started);
+    if (bDebugInstantFinish)
+    {
+        bInitializingConditions = false;
+        SetQuestStatus(EQuestStatus::Completed);
+        return;
+    }
+    for (const UQuestCondition* Template : QuestSettings->EndConditionsInst)
+    {
+        UQuestCondition* Condition = DuplicateObject<UQuestCondition>(Template, this);
+        EndConditions.Add(Condition);
+        Condition->OnQuestConditionCompleted.AddUObject(this, &AQuest::UpdateEndStatus);
+    }
+    for (UQuestCondition* Condition : EndConditions) Condition->StartCondition();
+    bInitializingConditions = false;
+    UpdateEndStatus();
 }
 
 void AQuest::UpdateEndStatus()
 {
-	for(UQuestCondition* Condition : EndConditions)
-	{
-		if (!ensure(Condition))
-		{
-			return;
-		}
-		if (!Condition->IsCompleted())
-		{
-			return;
-		}
-	}
-
-	QuestStatus = EQuestStatus::Completed;
+    if (bInitializingConditions || QuestStatus != EQuestStatus::Started) return;
+    for (UQuestCondition* Condition : EndConditions)
+    {
+        if (!IsValid(Condition) || !Condition->IsCompleted()) return;
+    }
+    for (UQuestCondition* Condition : EndConditions)
+    {
+        Condition->OnQuestConditionCompleted.RemoveAll(this);
+        Condition->StopCondition();
+    }
+    SetQuestStatus(EQuestStatus::Completed);
 }
